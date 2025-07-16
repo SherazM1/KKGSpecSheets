@@ -42,6 +42,11 @@ st.dataframe(df, height=400)
 # Name for Excel file
 excel_name = st.text_input("Excel file name", value="spec_sheets.xlsx")
 
+
+if not excel_name.lower().endswith('.xlsx'):
+    excel_name += '.xlsx'
+
+
 # Button to download Excel
 if st.button("Download Excel"):
     excel_buffer = make_excel_file_from_data(all_rows, field_order, file_name=excel_name)
