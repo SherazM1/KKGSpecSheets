@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from pdftoexcel import extract_pdf_data, make_excel_file_from_data  # <- Import your new functions!
+from pdftoexcel import extract_pdf_data, make_excel_file_from_data
 from pdftoexcel import field_order, field_aliases 
 import os
 
