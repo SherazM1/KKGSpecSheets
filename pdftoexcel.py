@@ -86,7 +86,7 @@ def extract_fields(page, fmap):
     out = {}
     for y in sorted(lines):
         row = sorted(lines[y], key=lambda w: w["x0"])
-        # build color‐chunk list
+        # Build color-chunk list
         chunks = []
         last_color = row[0]["non_stroking_color"]
         buf = [row[0]]
@@ -99,21 +99,26 @@ def extract_fields(page, fmap):
         chunks.append((last_color, buf))
 
         i = 0
+        # Uncomment for debugging if needed
+        # print([(i, "black" if is_black(c) else "not-black", " ".join(w["text"] for w in ch)) for i, (c, ch) in enumerate(chunks)])
         while i < len(chunks):
             label_color, label_chunk = chunks[i]
             if is_black(label_color):
-                # collect everything up until the next black chunk
+                # Collect ALL consecutive non-black chunks after this label
                 value_words = []
                 j = i + 1
                 while j < len(chunks) and not is_black(chunks[j][0]):
-                    value_words += [w["text"] for w in chunks[j][1]]
+                    value_words += [w["text"] for w in chunks[j][1] if w["text"].strip()]
                     j += 1
 
                 if value_words:
-                    raw_label = " ".join(w["text"] for w in label_chunk).rstrip(":")
+                    raw_label = " ".join(w["text"] for w in label_chunk).replace(":", "").strip().lower()
                     field = match_field(raw_label, fmap)
                     if field:
-                        out[field] = " ".join(value_words)
+                        value = re.sub(r'\s+', ' ', " ".join(value_words)).strip()
+                        prev_val = out.get(field, "")
+                        combined_val = (prev_val + " " + value).strip() if prev_val else value
+                        out[field] = combined_val
 
                 i = j
             else:
