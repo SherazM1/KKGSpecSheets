@@ -35,128 +35,84 @@ field_aliases = {
     "date": ["date"]
 }
 
-def normalize(text):
-    return re.sub(r'[^a-z0-9]', '', text.lower())
+def normalize(text: str) -> str:
+    return re.sub(r'[^a-z0-9]', "", text.lower())
 
-def build_normalized_field_map(field_aliases):
+def build_field_map(aliases):
     return {
-        normalize(alias): canonical
-        for canonical, aliases in field_aliases.items()
-        for alias in aliases
+        normalize(a): canon
+        for canon, vals in aliases.items()
+        for a in vals
     }
 
-def match_field(label, normalized_field_map):
-    norm_label = normalize(label)
-    if norm_label in normalized_field_map:
-        return normalized_field_map[norm_label]
-    for norm_alias, canonical in normalized_field_map.items():
-        if len(norm_alias) < 3:
-            continue
-        if norm_alias in norm_label:
-            return canonical
+def match_field(label, fmap):
+    nl = normalize(label)
+    if nl in fmap:
+        return fmap[nl]
+    # fallback on substring match
+    for norm_alias, canon in fmap.items():
+        if len(norm_alias) >= 3 and norm_alias in nl:
+            return canon
     return None
 
-# ---------- COLOR-AWARE FIELD EXTRACTION ----------
+# ---------- COLOR HELPER ----------
+def rgb(color):
+    if isinstance(color, (tuple, list)):
+        return tuple(color[:3])
+    if isinstance(color, (int, float)):
+        return (color,)*3
+    return (0,0,0)
 
-def extract_fields_from_page_by_color(page, match_field_func):
+def is_black(c): 
+    r,g,b = rgb(c); return r<0.05 and g<0.05 and b<0.05
+
+def is_value_color(c):
+    r,g,b = rgb(c)
+    # define your tolerances once
+    gold1 = (0.86,0.65,0.0)
+    gold2 = (0.94669,0.78061,0.0)
+    return any(abs(r-x)<0.13 and abs(g-y)<0.13 and abs(b-z)<0.13
+               for (x,y,z) in (gold1, gold2))
+
+# ---------- EXTRACTION LOGIC ----------
+def extract_fields(page, fmap):
     words = page.extract_words(extra_attrs=["non_stroking_color"])
-    lines_by_y = {}
-    for word in words:
-        y = round(word['top'])
-        lines_by_y.setdefault(y, []).append(word)
+    # group by approximate y
+    lines = {}
+    for w in words:
+        y = round(w["top"])
+        lines.setdefault(y, []).append(w)
 
-    fields = {}
-
-    def get_rgb_tuple(color):
-        if isinstance(color, (tuple, list)):
-            return tuple(color[:3]) + (0,) * (3 - len(color[:3]))
-        elif isinstance(color, (int, float)):
-            return (color, color, color)
-        return (0, 0, 0)
-
-    def is_black(color):
-        rgb = get_rgb_tuple(color)
-        return rgb[0] < 0.05 and rgb[1] < 0.05 and rgb[2] < 0.05
-
-    def is_value_color(color):
-        rgb = get_rgb_tuple(color)
-        # Gold/yellow shades seen in sample PDFs, tolerance for others
-        return (
-            abs(rgb[0] - 0.86) < 0.13 and
-            abs(rgb[1] - 0.65) < 0.13 and
-            abs(rgb[2] - 0.0) < 0.13
-        ) or (
-            abs(rgb[0] - 0.94669) < 0.13 and
-            abs(rgb[1] - 0.78061) < 0.13 and
-            abs(rgb[2] - 0.0) < 0.13
-        )
-
-    for y in sorted(lines_by_y):
-        line_words = sorted(lines_by_y[y], key=lambda w: w['x0'])
-        color_chunks = []
-        if not line_words:
-            continue
-        last_color = line_words[0].get("non_stroking_color")
-        chunk = [line_words[0]]
-        for w in line_words[1:]:
-            color = w.get("non_stroking_color")
-            if color == last_color:
-                chunk.append(w)
+    out = {}
+    for y in sorted(lines):
+        row = sorted(lines[y], key=lambda w: w["x0"])
+        chunks = []
+        last = row[0]["non_stroking_color"]
+        buf = [row[0]]
+        for w in row[1:]:
+            if w["non_stroking_color"] == last:
+                buf.append(w)
             else:
-                color_chunks.append((last_color, chunk))
-                chunk = [w]
-                last_color = color
-        color_chunks.append((last_color, chunk))
+                chunks.append((last, buf))
+                last, buf = w["non_stroking_color"], [w]
+        chunks.append((last, buf))
 
         i = 0
-        while i < len(color_chunks):
-            label_color, label_chunk = color_chunks[i]
-            if is_black(label_color):
-                # Merge all consecutive value chunks as value (robust for multi-word)
-                value_texts = []
-                j = i + 1
-                while j < len(color_chunks) and is_value_color(color_chunks[j][0]):
-                    value_texts.extend(w['text'] for w in color_chunks[j][1])
+        while i < len(chunks):
+            col, chunk = chunks[i]
+            if is_black(col):
+                j = i+1
+                vals = []
+                while j < len(chunks) and is_value_color(chunks[j][0]):
+                    vals += [w["text"] for w in chunks[j][1]]
                     j += 1
-                if value_texts:
-                    raw_label = ' '.join(w['text'] for w in label_chunk).replace(':', '').strip()
-                    raw_value = ' '.join(value_texts).strip()
-                    field = match_field_func(raw_label)
-                    if field:
-                        fields[field] = raw_value
+                if vals:
+                    label = " ".join(w["text"] for w in chunk).rstrip(":")
+                    key   = match_field(label, fmap)
+                    if key:
+                        out[key] = " ".join(vals)
                 i = j
             else:
                 i += 1
-    return fields
+    return out
 
-# ---------- DATA EXTRACTION FROM PDF ----------
-
-def extract_pdf_data(pdf_file, field_order, field_aliases):
-    """Takes file-like or path, returns list-of-dicts with consistent field ordering."""
-    normalized_field_map = build_normalized_field_map(field_aliases)
-    match_func = lambda label: match_field(label, normalized_field_map)
-    all_rows = []
-    with pdfplumber.open(pdf_file) as pdf:
-        for page in pdf.pages:
-            fields = extract_fields_from_page_by_color(page, match_func)
-            all_rows.append(fields)
-    return [
-        {field: row.get(field, "") for field in field_order}
-        for row in all_rows
-    ]
-
-# ---------- IN-MEMORY EXCEL WRITER ----------
-
-def make_excel_file_from_data(data_rows, field_order, file_name="output.xlsx"):
-    """Returns BytesIO ready for download, not saved to disk."""
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.append(field_order)
-    for row in data_rows:
-        ws.append([row.get(field, "") for field in field_order])
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
-    return output
-
-# --- END FILE ---
