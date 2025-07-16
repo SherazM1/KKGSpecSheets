@@ -109,8 +109,13 @@ def extract_fields(page, fmap):
                 value_words = []
                 j = i + 1
                 while j < len(chunks) and not is_black(chunks[j][0]):
-                    value_words += [w["text"] for w in chunks[j][1] if w["text"].strip()]
-                    j += 1
+                    texts = [w["text"] for w in chunks[j][1] if w["text"].strip()]
+    # If any value is 'N/A', take that and stop
+                    if any(text.upper() == "N/A" for text in texts):
+                        value_words = ["N/A"]
+                        break
+                value_words += texts
+                j += 1
 
                 if value_words:
                     raw_label = " ".join(w["text"] for w in label_chunk).replace(":", "").strip().lower()
