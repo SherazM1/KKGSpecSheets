@@ -2,8 +2,6 @@ import os
 import re
 import pdfplumber
 import openpyxl
-import platform
-import subprocess
 from io import BytesIO
 
 # ---------- FIELD ALIASES ----------
@@ -113,4 +111,28 @@ def extract_fields(page, fmap):
             else:
                 i += 1
     return out
+
+def extract_pdf_data(pdf_file, field_order, field_aliases):
+    fmap = build_field_map(field_aliases)
+    rows = []
+    with pdfplumber.open(pdf_file) as pdf:
+        for page in pdf.pages:
+            data = extract_fields(page, fmap)
+            rows.append(data)
+    # return a list of dicts, each dict ordered by field_order
+    return [
+        {f: row.get(f, "") for f in field_order}
+        for row in rows
+    ]
+
+def make_excel_file_from_data(data_rows, field_order, file_name="output.xlsx"):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(field_order)
+    for row in data_rows:
+        ws.append([row.get(f, "") for f in field_order])
+    stream = BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    return stream
 
