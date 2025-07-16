@@ -73,7 +73,6 @@ def is_value_color(c):
 # ---------- EXTRACTION LOGIC ----------
 def extract_fields(page, fmap):
     words = page.extract_words(extra_attrs=["non_stroking_color"])
-    # group by approximate y
     lines = {}
     for w in words:
         y = round(w["top"])
@@ -82,34 +81,39 @@ def extract_fields(page, fmap):
     out = {}
     for y in sorted(lines):
         row = sorted(lines[y], key=lambda w: w["x0"])
+        # build color‐chunk list
         chunks = []
-        last = row[0]["non_stroking_color"]
+        last_color = row[0]["non_stroking_color"]
         buf = [row[0]]
         for w in row[1:]:
-            if w["non_stroking_color"] == last:
+            if w["non_stroking_color"] == last_color:
                 buf.append(w)
             else:
-                chunks.append((last, buf))
-                last, buf = w["non_stroking_color"], [w]
-        chunks.append((last, buf))
+                chunks.append((last_color, buf))
+                last_color, buf = w["non_stroking_color"], [w]
+        chunks.append((last_color, buf))
 
         i = 0
         while i < len(chunks):
-            col, chunk = chunks[i]
-            if is_black(col):
-                j = i+1
-                vals = []
-                while j < len(chunks) and is_value_color(chunks[j][0]):
-                    vals += [w["text"] for w in chunks[j][1]]
+            label_color, label_chunk = chunks[i]
+            if is_black(label_color):
+                # collect everything up until the next black chunk
+                value_words = []
+                j = i + 1
+                while j < len(chunks) and not is_black(chunks[j][0]):
+                    value_words += [w["text"] for w in chunks[j][1]]
                     j += 1
-                if vals:
-                    label = " ".join(w["text"] for w in chunk).rstrip(":")
-                    key   = match_field(label, fmap)
-                    if key:
-                        out[key] = " ".join(vals)
+
+                if value_words:
+                    raw_label = " ".join(w["text"] for w in label_chunk).rstrip(":")
+                    field = match_field(raw_label, fmap)
+                    if field:
+                        out[field] = " ".join(value_words)
+
                 i = j
             else:
                 i += 1
+
     return out
 
 def extract_pdf_data(pdf_file, field_order, field_aliases):
