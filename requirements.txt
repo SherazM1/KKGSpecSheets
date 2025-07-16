@@ -4,3 +4,4 @@ pdfplumber
 openpyxl
 pandas
 tkinter
+pillow
