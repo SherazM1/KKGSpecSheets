@@ -3,6 +3,9 @@ import re
 import pdfplumber
 import openpyxl
 from io import BytesIO
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
+
 
 # ---------- FIELD ALIASES ----------
 field_order = [
@@ -137,13 +140,25 @@ def extract_pdf_data(pdf_file, field_order, field_aliases):
     ]
 
 def make_excel_file_from_data(data_rows, field_order, file_name="output.xlsx"):
-    wb = openpyxl.Workbook()
+    """Returns BytesIO object with table, ready for Streamlit download."""
+    wb = Workbook()
     ws = wb.active
-    ws.append(field_order)
-    for row in data_rows:
-        ws.append([row.get(f, "") for f in field_order])
-    stream = BytesIO()
-    wb.save(stream)
-    stream.seek(0)
-    return stream
+    ws.title = "Spec Sheet Data"
 
+    # Write header
+    ws.append(field_order)
+
+    # Write rows
+    for row in data_rows:
+        ws.append([row.get(field, "") for field in field_order])
+
+    # Auto-fit column widths
+    for idx, col in enumerate(ws.columns, 1):
+        max_length = max((len(str(cell.value)) for cell in col), default=0)
+        ws.column_dimensions[get_column_letter(idx)].width = max(12, min(max_length + 2, 30))
+
+    # Save to BytesIO
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
