@@ -53,22 +53,27 @@ def match_field(label, fmap):
 
 # ---------- COLOR HELPER ----------
 def rgb(color):
+    # Always return exactly three components, padding with 0 if needed
     if isinstance(color, (tuple, list)):
-        return tuple(color[:3])
+        vals = list(color[:3])
+        vals += [0] * (3 - len(vals))
+        return tuple(vals)
     if isinstance(color, (int, float)):
-        return (color,)*3
-    return (0,0,0)
+        return (color, color, color)
+    return (0, 0, 0)
 
-def is_black(c): 
-    r,g,b = rgb(c); return r<0.05 and g<0.05 and b<0.05
+def is_black(c):
+    r, g, b = rgb(c)
+    return r < 0.05 and g < 0.05 and b < 0.05
 
+# (You can remove is_value_color entirely if you’re treating all non-black as values,
+#  or keep it for more nuance.)
 def is_value_color(c):
-    r,g,b = rgb(c)
-    # define your tolerances once
-    gold1 = (0.86,0.65,0.0)
-    gold2 = (0.94669,0.78061,0.0)
-    return any(abs(r-x)<0.13 and abs(g-y)<0.13 and abs(b-z)<0.13
-               for (x,y,z) in (gold1, gold2))
+    r, g, b = rgb(c)
+    gold1 = (0.86, 0.65, 0.0)
+    gold2 = (0.94669, 0.78061, 0.0)
+    return any(abs(r - x) < 0.13 and abs(g - y) < 0.13 and abs(b - z) < 0.13
+               for (x, y, z) in (gold1, gold2))
 
 # ---------- EXTRACTION LOGIC ----------
 def extract_fields(page, fmap):
