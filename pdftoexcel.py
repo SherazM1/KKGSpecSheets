@@ -88,29 +88,43 @@ def extract_fields(page, fmap):
 
     for y in sorted(lines):
         row = sorted(lines[y], key=lambda w: w["x0"])
-        used = set()
         i = 0
         while i < len(row):
-            word_text = row[i]['text'].replace(':', '').strip().lower()
-            canonical = fmap.get(word_text)
-            if canonical and i not in used:
-                label_x1 = row[i]['x1']
-                # All words to the right of this label (and not used by another field)
+            if is_black(row[i]["non_stroking_color"]):
+                # Start label chunk
+                label_words = [row[i]["text"]]
+                i += 1
+                while i < len(row) and is_black(row[i]["non_stroking_color"]):
+                    label_words.append(row[i]["text"])
+                    i += 1
+                # Collect all non-black words until next black (label)
                 value_words = []
-                for j in range(i + 1, len(row)):
-                    if j not in used and row[j]['x0'] >= label_x1 - 1:
-                        value_words.append(row[j]['text'])
-                        used.add(j)
-                value = " ".join(value_words).strip()
-                # Handle 'n/a'
-                if value.lower() == "n/a":
-                    out[canonical] = "n/a"
-                elif value:
-                    out[canonical] = value
-                used.add(i)
-            i += 1
+                while i < len(row) and not is_black(row[i]["non_stroking_color"]):
+                    value_words.append(row[i]["text"])
+                    i += 1
+                # If value is empty, check if next line starts with value chunk (split-line case)
+                if not value_words:
+                    # Look ahead to next line if possible
+                    next_y = None
+                    ys = sorted(lines)
+                    y_idx = ys.index(y)
+                    if y_idx + 1 < len(ys):
+                        next_y = ys[y_idx + 1]
+                        next_row = sorted(lines[next_y], key=lambda w: w["x0"])
+                        if next_row and not is_black(next_row[0]["non_stroking_color"]):
+                            value_words = [w["text"] for w in next_row if not is_black(w["non_stroking_color"])]
+                raw_label = " ".join(label_words).replace(":", "").strip().lower()
+                field = match_field(raw_label, fmap)
+                if field:
+                    value = re.sub(r'\s+', ' ', " ".join(value_words)).strip()
+                    # Handle 'n/a'
+                    if value.lower() == "n/a":
+                        out[field] = "n/a"
+                    elif value:
+                        out[field] = value
+            else:
+                i += 1
     return out
-
 
 def extract_pdf_data(pdf_file, field_order, field_aliases):
     fmap = build_field_map(field_aliases)
