@@ -77,6 +77,7 @@ def is_value_color(c):
 
 # ---------- EXTRACTION LOGIC ----------
 def extract_fields(page, fmap):
+    import re
     words = page.extract_words(extra_attrs=["non_stroking_color"])
     lines = {}
     for w in words:
@@ -87,30 +88,27 @@ def extract_fields(page, fmap):
 
     for y in sorted(lines):
         row = sorted(lines[y], key=lambda w: w["x0"])
+        used = set()
         i = 0
         while i < len(row):
-            # Look for black (label) word
-            if is_black(row[i]["non_stroking_color"]):
-                # Start label chunk
-                label_words = [row[i]["text"]]
-                i += 1
-                # Gather rest of label words if also black
-                while i < len(row) and is_black(row[i]["non_stroking_color"]):
-                    label_words.append(row[i]["text"])
-                    i += 1
-                # Start collecting value words (all non-black until next black or end)
+            word_text = row[i]['text'].replace(':', '').strip().lower()
+            canonical = fmap.get(word_text)
+            if canonical and i not in used:
+                label_x1 = row[i]['x1']
+                # All words to the right of this label (and not used by another field)
                 value_words = []
-                while i < len(row) and not is_black(row[i]["non_stroking_color"]):
-                    value_words.append(row[i]["text"])
-                    i += 1
-                # Normalize and store
-                raw_label = " ".join(label_words).replace(":", "").strip().lower()
-                field = match_field(raw_label, fmap)
-                if field and value_words:
-                    value = " ".join(value_words).strip()
-                    out[field] = value
-            else:
-                i += 1
+                for j in range(i + 1, len(row)):
+                    if j not in used and row[j]['x0'] >= label_x1 - 1:
+                        value_words.append(row[j]['text'])
+                        used.add(j)
+                value = " ".join(value_words).strip()
+                # Handle 'n/a'
+                if value.lower() == "n/a":
+                    out[canonical] = "n/a"
+                elif value:
+                    out[canonical] = value
+                used.add(i)
+            i += 1
     return out
 
 
